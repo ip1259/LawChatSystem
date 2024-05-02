@@ -18,3 +18,5 @@ def chatpage_app():
 
         clear.click(AIProcessor.clean_chatbot)
         msg.submit(respond, [msg, chatbot], [msg, chatbot])
+
+    return chat_page

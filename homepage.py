@@ -1,4 +1,9 @@
 import gradio as gr
+import dotenv
+import os
+
+
+dotenv.load_dotenv()
 
 
 def force_lightmode(app):
@@ -38,7 +43,7 @@ def homepage_app():
                          width=480,
                          height=100)
             with gr.Column(scale=1, min_width=20):
-                gr.Button(value="登入", elem_id="login-button")
+                gr.Button(value="登入", elem_id="login-button", link="http://" + os.getenv("SERVER_HOST") + ":" + os.getenv("SERVER_PORT") + "/chat")
         with gr.Row():
             with gr.Column(scale=2, min_width=0):
                 pass
@@ -72,5 +77,3 @@ def homepage_app():
         force_lightmode(demo)
     return demo
 
-
-homepage_app().launch(auth=("admin", "admin"), server_port=28080)
