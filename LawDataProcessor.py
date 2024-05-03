@@ -1,4 +1,5 @@
 import datetime
+import json
 import joblib
 from typing import TextIO, Union
 import LawDataExceptionHandler
@@ -122,8 +123,26 @@ def save_law_data(lawdata: LawData):
     if lawdata.law_name != "":
         joblib.dump(lawdata, filename="LawData/" + lawdata.law_name + ".ld")
     else:
-        raise LawDataExceptionHandler.BlankLawDataException
+        raise LawDataExceptionHandler.BlankLawNameException
 
 
 def load_law_data(lawname: str):
     return joblib.load(filename="LawData/" + lawname + ".ld")
+
+
+def load_laws_from_gov_api():
+    import requests, zipfile, io
+    r = requests.get("https://law.moj.gov.tw/api/Ch/Law/JSON")
+    with zipfile.ZipFile(io.BytesIO(r.content)).open("ChLaw.json") as laws:
+        return json.load(laws)['Laws']
+
+
+def find_law_from_gov_api(law_name: str = ""):
+    if law_name != "":
+        laws = load_laws_from_gov_api()
+        for law in laws:
+            if law['LawName'] == law_name:
+                return law
+        raise LawDataExceptionHandler.LawNotFindException(law_name)
+    else:
+        raise LawDataExceptionHandler.BlankLawNameException
