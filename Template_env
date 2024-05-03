@@ -1,0 +1,4 @@
+GOOGLE_API_KEY = "<Google Gemini API Token>"
+SERVER_HOST = "<server host>"
+SERVER_PORT = "<server port>"
+HUGGINGFACE_HUB_CACHE = "<HF CACHE PATH>"
