@@ -8,41 +8,43 @@ import LawDataExceptionHandler
 class Article:
     """條文物件，主要會以List的方式用在法律物件內"""
 
-    def __init__(self, article_law_name: str, article_num: str = "", article_type: str = "", article_content: str = "",
-                 article_embedding: list[float] = None, article_dict: dict = None):
+    def __init__(self, article_law_name: str,
+                 article_num: str = "",
+                 article_type: str = "",
+                 article_content: str = "",
+                 article_dict: dict = None):
         if article_dict is None:
             self.article_law_name = article_law_name
             self.article_number = article_num
             self.article_type = article_type
             self.article_content = article_content
-            self.article_embedding = article_embedding
         else:
             self.article_law_name = article_law_name
             self.article_number = article_dict['ArticleNo']
             self.article_type = article_dict['ArticleType']
             self.article_content = article_dict['ArticleContent']
-            self.article_embedding = None
 
     def dict(self):
         return {"ArticleNumber": self.article_number,
                 "ArticleType": self.article_type,
-                "ArticleContent": self.article_content,
-                "ArticleEmbedding": self.article_embedding}
+                "ArticleContent": self.article_content}
 
-    def get_article_title(self, law_name: str):
-        return law_name + " " + self.article_number
+    def get_article_title(self):
+        return self.article_law_name + " " + self.article_number
 
 
 class LawData:
     """用於儲存及處理法律資料"""
 
     def __init__(self, law_dict: dict = None):
+
         if law_dict is None:
             self.law_name = ""
             self.law_level = ""
             self.law_modified_date = datetime.date(2000, 1, 1)
             self.law_effective_date = datetime.date(2000, 1, 1)
             self.law_articles: list[Article] = []
+            self.law_embeddings = None
         else:
             self.law_name = law_dict['LawName']
             self.law_level = law_dict['LawLevel']
@@ -52,7 +54,8 @@ class LawData:
                                                        day=int(law_dict['LawModifiedDate'][6:]))
             else:
                 self.law_modified_date = datetime.date(2000, 1, 1)
-            if law_dict['LawEffectiveDate'] != "" and int(law_dict['LawEffectiveDate'][0:4]) <= datetime.date.today().year:
+            if law_dict['LawEffectiveDate'] != "" and int(
+                    law_dict['LawEffectiveDate'][0:4]) <= datetime.date.today().year:
                 self.law_effective_date = datetime.date(year=int(law_dict['LawEffectiveDate'][0:4]),
                                                         month=int(law_dict['LawEffectiveDate'][4:6]),
                                                         day=int(law_dict['LawEffectiveDate'][6:]))
@@ -62,6 +65,10 @@ class LawData:
             for a in law_dict['LawArticles']:
                 tmp_article = Article(self.law_name, article_dict=a)
                 self.law_articles.append(tmp_article)
+            try:
+                self.law_embeddings = joblib.load("/LawData/" + self.law_name + ".embeddings")
+            except FileNotFoundError as e:
+                self.law_embeddings = None
 
     def dict(self) -> dict:
         articles = []
@@ -78,6 +85,14 @@ class LawData:
                 "LawModifiedDate": modDate,
                 "LawEffectiveDate": effectiveDate,
                 "LawArticles": articles}
+
+    def get_all_articles(self):
+        result = []
+        for a in self.law_articles:
+            if a.article_type == "A":
+                tmp = a.get_article_title() + " " + a.article_content
+                result.append(tmp)
+        return result
 
     def get_law_name(self):
         return self.law_name
