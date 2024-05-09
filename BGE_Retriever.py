@@ -1,0 +1,5 @@
+from langchain_community.embeddings import HuggingFaceBgeEmbeddings
+from langchain_community.vectorstores import DocArrayHnswSearch
+from LawDataProcessor import LawData
+import LawDataProcessor
+

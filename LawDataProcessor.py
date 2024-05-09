@@ -40,16 +40,22 @@ class LawData:
     def __init__(self):
         self.law_name = ""
         self.law_level = ""
+        self.law_URL = ""
+        self.law_pcode = ""
+        self.law_isLawAbandon = False
         self.law_modified_date = datetime.date(2000, 1, 1)
         self.law_effective_date = datetime.date(2000, 1, 1)
         self.law_articles: list[Article] = []
-        self.law_embeddings = None
+        self.law_embeddings = False
 
     @classmethod
     def from_dict(cls, law_dict: dict):
         result = cls()
         result.law_name = law_dict['LawName']
         result.law_level = law_dict['LawLevel']
+        result.law_URL = law_dict['LawURL']
+        result.law_pcode = str(law_dict['LawURL']).split('=')[1]
+        result.law_isLawAbandon = "廢" in law_dict['LawAbandonNote']
         if law_dict['LawModifiedDate'] != "":
             result.law_modified_date = datetime.date(year=int(law_dict['LawModifiedDate'][0:4]),
                                                      month=int(law_dict['LawModifiedDate'][4:6]),
@@ -82,9 +88,12 @@ class LawData:
         result = cls.from_file("LawData/" + law_name + ".ld")
         return result
 
-    def set_embeddings(self, embeddings: DocArrayInMemorySearch):
+    def set_embeddings(self, embeddings: bool):
         self.law_embeddings = embeddings
         save_law_data(self)
+
+    def is_abandoned(self):
+        return self.law_isLawAbandon
 
     def dict(self) -> dict:
         articles = []
@@ -102,12 +111,16 @@ class LawData:
                 "LawEffectiveDate": effectiveDate,
                 "LawArticles": articles}
 
-    def get_all_articles(self):
+    def get_all_articles(self, ignore_removed_article: bool = False):
         result = []
         for a in self.law_articles:
             if a.article_type == "A":
-                tmp = a.get_article_title() + " " + a.article_content
-                result.append(tmp)
+                if not ignore_removed_article:
+                    tmp = a.get_article_title() + " " + a.article_content
+                    result.append(tmp)
+                elif "（刪除）" not in a.article_content:
+                    tmp = a.get_article_title() + " " + a.article_content
+                    result.append(tmp)
         return result
 
     def get_law_name(self):
