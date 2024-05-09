@@ -1,74 +1,90 @@
 import datetime
 import json
 import joblib
-from typing import TextIO, Union
+from typing import TextIO, Union, Type
 import LawDataExceptionHandler
+from langchain_community.vectorstores import DocArrayInMemorySearch
 
 
 class Article:
     """條文物件，主要會以List的方式用在法律物件內"""
 
-    def __init__(self, article_law_name: str,
-                 article_num: str = "",
-                 article_type: str = "",
-                 article_content: str = "",
-                 article_dict: dict = None):
-        if article_dict is None:
-            self.article_law_name = article_law_name
-            self.article_number = article_num
-            self.article_type = article_type
-            self.article_content = article_content
-        else:
-            self.article_law_name = article_law_name
-            self.article_number = article_dict['ArticleNo']
-            self.article_type = article_dict['ArticleType']
-            self.article_content = article_dict['ArticleContent']
+    def __init__(self):
+        self.article_law_name = ""
+        self.article_number = ""
+        self.article_type = ""
+        self.article_content = ""
+
+    @classmethod
+    def from_dict(cls, law_name: str, article_dict: dict):
+        result = cls()
+        result.article_law_name = law_name
+        result.article_number = str(article_dict['ArticleNo']).replace(" ", "")
+        result.article_type = article_dict['ArticleType']
+        result.article_content = article_dict['ArticleContent']
+        return result
 
     def dict(self):
-        return {"ArticleNumber": self.article_number,
+        return {"LawName": self.article_law_name,
+                "ArticleNumber": self.article_number,
                 "ArticleType": self.article_type,
                 "ArticleContent": self.article_content}
 
     def get_article_title(self):
-        return self.article_law_name + " " + self.article_number
+        return self.article_law_name + self.article_number
 
 
 class LawData:
     """用於儲存及處理法律資料"""
 
-    def __init__(self, law_dict: dict = None):
+    def __init__(self):
+        self.law_name = ""
+        self.law_level = ""
+        self.law_modified_date = datetime.date(2000, 1, 1)
+        self.law_effective_date = datetime.date(2000, 1, 1)
+        self.law_articles: list[Article] = []
+        self.law_embeddings = None
 
-        if law_dict is None:
-            self.law_name = ""
-            self.law_level = ""
-            self.law_modified_date = datetime.date(2000, 1, 1)
-            self.law_effective_date = datetime.date(2000, 1, 1)
-            self.law_articles: list[Article] = []
-            self.law_embeddings = None
+    @classmethod
+    def from_dict(cls, law_dict: dict):
+        result = cls()
+        result.law_name = law_dict['LawName']
+        result.law_level = law_dict['LawLevel']
+        if law_dict['LawModifiedDate'] != "":
+            result.law_modified_date = datetime.date(year=int(law_dict['LawModifiedDate'][0:4]),
+                                                     month=int(law_dict['LawModifiedDate'][4:6]),
+                                                     day=int(law_dict['LawModifiedDate'][6:]))
         else:
-            self.law_name = law_dict['LawName']
-            self.law_level = law_dict['LawLevel']
-            if law_dict['LawModifiedDate'] != "":
-                self.law_modified_date = datetime.date(year=int(law_dict['LawModifiedDate'][0:4]),
-                                                       month=int(law_dict['LawModifiedDate'][4:6]),
-                                                       day=int(law_dict['LawModifiedDate'][6:]))
-            else:
-                self.law_modified_date = datetime.date(2000, 1, 1)
-            if law_dict['LawEffectiveDate'] != "" and int(
-                    law_dict['LawEffectiveDate'][0:4]) <= datetime.date.today().year:
-                self.law_effective_date = datetime.date(year=int(law_dict['LawEffectiveDate'][0:4]),
-                                                        month=int(law_dict['LawEffectiveDate'][4:6]),
-                                                        day=int(law_dict['LawEffectiveDate'][6:]))
-            else:
-                self.law_effective_date = datetime.date(2000, 1, 1)
-            self.law_articles: list[Article] = []
-            for a in law_dict['LawArticles']:
-                tmp_article = Article(self.law_name, article_dict=a)
-                self.law_articles.append(tmp_article)
-            try:
-                self.law_embeddings = joblib.load("/LawData/" + self.law_name + ".embeddings")
-            except FileNotFoundError as e:
-                self.law_embeddings = None
+            result.law_modified_date = datetime.date(2000, 1, 1)
+        if law_dict['LawEffectiveDate'] != "" and int(
+                law_dict['LawEffectiveDate'][0:4]) <= datetime.date.today().year:
+            result.law_effective_date = datetime.date(year=int(law_dict['LawEffectiveDate'][0:4]),
+                                                      month=int(law_dict['LawEffectiveDate'][4:6]),
+                                                      day=int(law_dict['LawEffectiveDate'][6:]))
+        else:
+            result.law_effective_date = datetime.date(2000, 1, 1)
+        result.law_articles = []
+        for a in law_dict['LawArticles']:
+            tmp_article = Article.from_dict(result.law_name, article_dict=a)
+            result.law_articles.append(tmp_article)
+        result.law_embeddings = None
+        return result
+
+    @classmethod
+    def from_file(cls, path: str):
+        result = joblib.load(path)
+        if not isinstance(result, LawData):
+            raise TypeError
+        return result
+
+    @classmethod
+    def from_law_name(cls, law_name: str):
+        result = cls.from_file("LawData/" + law_name + ".ld")
+        return result
+
+    def set_embeddings(self, embeddings: DocArrayInMemorySearch):
+        self.law_embeddings = embeddings
+        save_law_data(self)
 
     def dict(self) -> dict:
         articles = []
@@ -100,7 +116,7 @@ class LawData:
     def get_table_of_articles(self):
         result = ""
         for a in self.law_articles:
-            if a.article_number == "":
+            if a.article_type == "C":
                 result += a.article_content + "\n"
         return result
 
@@ -187,6 +203,6 @@ def find_law_from_gov_api(law_name: str = ""):
         for law in laws:
             if law['LawName'] == law_name:
                 return law
-        raise LawDataExceptionHandler.LawNotFindException(law_name)
+        raise LawDataExceptionHandler.LawNotFoundException(law_name)
     else:
         raise LawDataExceptionHandler.BlankLawNameException
