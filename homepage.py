@@ -43,7 +43,7 @@ def homepage_app():
                          width=480,
                          height=100)
             with gr.Column(scale=1, min_width=20):
-                gr.Button(value="登入", elem_id="login-button", link="http://" + os.getenv("SERVER_HOST") + ":" + os.getenv("SERVER_PORT") + "/chat")
+                gr.Button(value="開始聊天", link="http://" + os.getenv("SERVER_HOST") + ":" + os.getenv("SERVER_PORT") + "/chat")
         with gr.Row():
             with gr.Column(scale=2, min_width=0):
                 pass

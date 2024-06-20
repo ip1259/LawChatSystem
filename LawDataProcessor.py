@@ -1,5 +1,8 @@
 import datetime
 import json
+import logging
+import os
+
 import joblib
 from typing import TextIO, Union, Type
 import LawDataExceptionHandler
@@ -79,13 +82,22 @@ class LawData:
     @classmethod
     def from_file(cls, path: str):
         result = joblib.load(path)
-        if not isinstance(result, LawData):
+        logging.debug(type(result))
+        logging.debug(LawData)
+        if not isinstance(type(result), type(LawData)):
             raise TypeError
         return result
 
     @classmethod
     def from_law_name(cls, law_name: str):
-        result = cls.from_file("LawData/" + law_name + ".ld")
+        result = None
+        try:
+            result = cls.from_file("LawData/" + law_name + ".ld")
+        except FileNotFoundError as e:
+            logging.debug(e)
+            logging.debug("正在建立" + e.filename)
+            result = cls.from_dict(find_law_from_gov_api(law_name))
+            save_law_data(result)
         return result
 
     def set_embeddings(self, embeddings: bool):
@@ -111,16 +123,81 @@ class LawData:
                 "LawEffectiveDate": effectiveDate,
                 "LawArticles": articles}
 
-    def get_all_articles(self, ignore_removed_article: bool = False):
+    def get_all_articles(self, ignore_removed_article: bool = False, group_by_chapter: bool = False, str_mode: bool = False, max_arts_in_group: int = 10):
+        """
+
+        :param ignore_removed_article: if True 取得的回傳值不包含已刪除的條文
+        :param group_by_chapter: if True 取得的回傳值以章節群組
+        :param str_mode: 只在 group_by_chapter 為True值時有效，if True 取得的回傳值為字串組成一維陣列，if False 取得的回傳值為二維陣列，由章節名稱及章節下法條清單組成
+        :return:
+        """
         result = []
-        for a in self.law_articles:
-            if a.article_type == "A":
-                if not ignore_removed_article:
-                    tmp = a.get_article_title() + " " + a.article_content
-                    result.append(tmp)
-                elif "（刪除）" not in a.article_content:
-                    tmp = a.get_article_title() + " " + a.article_content
-                    result.append(tmp)
+        if not group_by_chapter:
+            for a in self.law_articles:
+                if a.article_type == "A":
+                    if not ignore_removed_article:
+                        tmp = a.get_article_title() + " " + a.article_content
+                        result.append(tmp)
+                    elif "（刪除）" not in a.article_content:
+                        tmp = a.get_article_title() + " " + a.article_content
+                        result.append(tmp)
+        else:
+            temp = []
+            part = ""
+            chapter = ""
+            section = ""
+            sub_section = ""
+            title = ""
+            for a in self.law_articles:
+                if a.article_type == "C":
+                    if "編" in a.article_content:
+                        part = a.article_content.replace(" ", "")
+                        chapter = ""
+                        section = ""
+                        sub_section = ""
+                    elif "章" in a.article_content:
+                        chapter = a.article_content.replace(" ", "")
+                        section = ""
+                        sub_section = ""
+                    elif "節" in a.article_content:
+                        section = a.article_content.replace(" ", "")
+                        sub_section = ""
+                    elif "款" in a.article_content:
+                        sub_section = a.article_content.replace(" ", "")
+
+                    if len(temp) > 1 and title == "":
+                        if str_mode:
+                            temp_str = ""
+                            for i in temp:
+                                temp_str += i + "\n"
+                            temp_str = temp_str.rstrip()
+                            result.append(temp_str)
+                        else:
+                            result.append(temp)
+                        temp = []
+                    title = part + " " + chapter + " " + section + " " + sub_section
+                    title = title.rstrip()
+                elif a.article_type == "A":
+                    if len(temp)-1 >= max_arts_in_group:
+                        title = temp[0]
+                        if str_mode:
+                            temp_str = ""
+                            for i in temp:
+                                temp_str += i + "\n"
+                            temp_str = temp_str.rstrip()
+                            result.append(temp_str)
+                        else:
+                            result.append(temp)
+                        temp = []
+
+                    if title != "":
+                        temp.append(title)
+                        title = ""
+                    if not ignore_removed_article:
+                        temp.append(a.get_article_title() + " " + a.article_content)
+                    elif "（刪除）" not in a.article_content:
+                        temp.append(a.get_article_title() + " " + a.article_content)
+
         return result
 
     def get_law_name(self):
@@ -205,17 +282,63 @@ def load_law_data(lawname: str):
 
 def load_laws_from_gov_api():
     import requests, zipfile, io
-    r = requests.get("https://law.moj.gov.tw/api/Ch/Law/JSON")
-    with zipfile.ZipFile(io.BytesIO(r.content)).open("ChLaw.json") as laws:
-        return json.load(laws)['Laws']
+    try:
+        r = requests.get("https://law.moj.gov.tw/api/Ch/Law/JSON")
+        with zipfile.ZipFile(io.BytesIO(r.content)).open("ChLaw.json") as laws:
+            return json.load(laws)['Laws']
+    except zipfile.BadZipfile as e:
+        logging.warning(e)
+        logging.debug("Try to load from another URL")
+        try:
+            r = requests.get("https://law.moj.gov.tw/api/data/chlaw.json.zip")
+            with zipfile.ZipFile(io.BytesIO(r.content)).open("ChLaw.json") as laws:
+                return json.load(laws)['Laws']
+        except zipfile.BadZipfile as e:
+            logging.warning(e)
+            logging.debug('Try to load From Local File')
+            with zipfile.ZipFile('ChLaw.json.zip').open("ChLaw.json") as laws:
+                return json.load(laws)['Laws']
+
+
+LAWS = load_laws_from_gov_api()
+
+
+def update_preloaded_laws():
+    global LAWS
+    LAWS = load_laws_from_gov_api()
 
 
 def find_law_from_gov_api(law_name: str = ""):
+    global LAWS
     if law_name != "":
-        laws = load_laws_from_gov_api()
+        laws = LAWS
         for law in laws:
             if law['LawName'] == law_name:
                 return law
         raise LawDataExceptionHandler.LawNotFoundException(law_name)
     else:
         raise LawDataExceptionHandler.BlankLawNameException
+
+
+def update_law_data():
+    update_preloaded_laws()
+    global LAWS
+    ld_files = os.listdir("LawData")
+    try:
+        os.remove("LawData/embeddings/docs_sqlite.db")
+        os.remove("LawData/embeddings/embedding.bin")
+    except FileNotFoundError as e:
+        logging.debug(e)
+
+    import VectorDB_PreBuilder
+    for i in ld_files:
+        if ".ld" in i:
+            law_name = i.split(".")[0]
+            logging.debug("Remove: " + "LawData/" + i)
+            os.remove("LawData/" + i)
+            LawData.from_law_name(law_name)
+            VectorDB_PreBuilder.build_vectordb_aio(law_name)
+
+
+if __name__ == "__main__":
+    update_law_data()
